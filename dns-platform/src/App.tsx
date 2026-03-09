@@ -28,6 +28,9 @@ interface UserData {
   subdomainDetailsCache: Record<string, SubdomainDetail>;
 }
 
+// API Base URL - Local'de /api (Vite proxy üzerinden), Canlıda Render URL'si
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
 function App() {
   const [step, setStep] = useState<Step>('login');
   
@@ -175,7 +178,7 @@ function App() {
     setError(prev => ({ ...prev, [domain]: '' }));
     
     try {
-      const response = await fetch(`/api/crt/?q=%.${domain}&output=json`);
+      const response = await fetch(`${API_BASE_URL}/api/crt?q=${domain}`);
       if (!response.ok) {
         throw new Error('crt.sh API yanıt vermedi');
       }
@@ -212,7 +215,7 @@ function App() {
   const handleAnalyzeSubdomain = async (sub: string) => {
     setSubdomainDetails(prev => ({ ...prev, [sub]: { ...prev[sub], analyzing: true } }));
     try {
-        const response = await fetch(`/api/analyze?domain=${sub}`);
+        const response = await fetch(`${API_BASE_URL}/api/analyze?domain=${sub}`);
         const data = await response.json();
         setSubdomainDetails(prev => ({ 
             ...prev, 
@@ -502,9 +505,9 @@ function App() {
                                             else if (String(p.status).startsWith('4') || String(p.status).startsWith('5')) statusBadgeClass = 'status-badge-red';
                                             else statusBadgeClass = 'status-badge-gray';
 
-                                            const targetUrl = p.protocol === 'https:' 
-                                                ? `https://${sub}:${p.port}`
-                                                : (p.protocol === 'http:' ? `http://${sub}:${p.port}` : `http://${sub}:${p.port}`);
+                                            const scheme = p.protocol === 'https:' ? 'https' : 'http';
+                                            const portStr = (scheme === 'https' && p.port === 443) || (scheme === 'http' && p.port === 80) ? '' : `:${p.port}`;
+                                            const targetUrl = `${scheme}://${sub}${portStr}`;
 
                                             return (
                                                 <a 
