@@ -4,7 +4,9 @@ import './index.css';
 type Step = 'login' | 'register' | 'dashboard';
 
 interface SubdomainData {
-  name_value: string;
+  subdomain: string;
+  source: string;
+  ip?: string;
 }
 
 interface PortInfo {
@@ -13,18 +15,25 @@ interface PortInfo {
   protocol: string;
 }
 
+interface TechInfo {
+  name: string;
+  category: string;
+}
+
 interface SubdomainDetail {
   ip: string | null;
   ports?: PortInfo[];
   isCloudflare?: boolean;
   analyzing?: boolean;
+  technologies?: TechInfo[];
+  techAnalyzing?: boolean;
 }
 
 // User data structure for localStorage
 interface UserData {
   password: string;
   domains: string[];
-  subdomainsCache: Record<string, string[]>;
+  subdomainsCache: Record<string, SubdomainData[]>;
   subdomainDetailsCache: Record<string, SubdomainDetail>;
 }
 
@@ -45,7 +54,7 @@ function App() {
   const [domainInput, setDomainInput] = useState('');
   const [domains, setDomains] = useState<string[]>([]);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
-  const [subdomains, setSubdomains] = useState<Record<string, string[]>>({});
+  const [subdomains, setSubdomains] = useState<Record<string, SubdomainData[]>>({});
   const [subdomainDetails, setSubdomainDetails] = useState<Record<string, SubdomainDetail>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [wakingUp, setWakingUp] = useState<Record<string, boolean>>({});
