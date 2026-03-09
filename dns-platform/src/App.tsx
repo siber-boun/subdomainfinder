@@ -775,6 +775,62 @@ function App() {
                             </div>
                         )}
 
+                        {/* ADVANCED SUMMARY TABLE */}
+                        {subdomains[selectedDomain] && subdomains[selectedDomain].some(item => {
+                            const sub = typeof item === 'string' ? (item as string) : item.subdomain;
+                            return subdomainDetails[sub] && (subdomainDetails[sub].ssl || subdomainDetails[sub].security);
+                        }) && (
+                            <div className="advanced-summary-box fade-in">
+                                <h4>Gelişmiş Analiz Özeti</h4>
+                                <div className="table-responsive">
+                                    <table className="summary-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Subdomain</th>
+                                                <th>SSL Skoru</th>
+                                                <th>Sertifika</th>
+                                                <th>HTTP Header Skoru</th>
+                                                <th>WAF Koruması</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {subdomains[selectedDomain].map((item, idx) => {
+                                                const sub = typeof item === 'string' ? (item as string) : item.subdomain;
+                                                const detail = subdomainDetails[sub];
+                                                
+                                                if (!detail || (!detail.ssl && !detail.security && !detail.advancedAnalyzing)) return null;
+
+                                                return (
+                                                    <tr key={idx}>
+                                                        <td className="col-subdomain">{sub}</td>
+                                                        <td>
+                                                            {detail.advancedAnalyzing ? <span className="analyzing-text-small">Taranıyor...</span> : 
+                                                             detail.ssl ? <span className={`grade-badge grade-${detail.ssl.grade}`}>{detail.ssl.grade}</span> : <span className="text-muted">-</span>}
+                                                        </td>
+                                                        <td className="col-cert">
+                                                            {detail.ssl ? (
+                                                                <span className={detail.ssl.valid ? 'text-success' : 'text-error'}>
+                                                                    {detail.ssl.valid ? `Geçerli (${detail.ssl.daysLeft}g)` : 'Geçersiz'}
+                                                                </span>
+                                                            ) : <span className="text-muted">-</span>}
+                                                        </td>
+                                                        <td>
+                                                            {detail.advancedAnalyzing ? <span className="analyzing-text-small">Taranıyor...</span> : 
+                                                             detail.security ? <span className={`grade-badge grade-${detail.security.grade}`}>{detail.security.grade}</span> : <span className="text-muted">-</span>}
+                                                        </td>
+                                                        <td>
+                                                            {detail.advancedAnalyzing ? <span className="analyzing-text-small">Taranıyor...</span> : 
+                                                             (detail.waf && detail.waf.detected) ? <span className="cf-badge" style={{ margin: 0 }}>{detail.waf.name}</span> : <span className="badge-none">Korumasız</span>}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
                         {showScope && (
                             <div className="scope-output-box fade-in">
                                 <div className="scope-header">
