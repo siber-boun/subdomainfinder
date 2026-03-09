@@ -314,7 +314,7 @@ function App() {
             </div>
           </div>
           <div className="header">
-            <h1>Kurumsal OSINT</h1>
+            <h1>BUSIBER OSINT</h1>
             <p>{step === 'login' ? 'Sisteme erişmek için giriş yapın' : 'Yeni bir hesap oluşturun'}</p>
           </div>
           
@@ -390,7 +390,7 @@ function App() {
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <svg xmlns="http://www.w3.org/0000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            <span>OSINT Platform</span>
+            <span>BUSIBER OSINT Platform</span>
           </div>
         </div>
         
