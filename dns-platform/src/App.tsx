@@ -59,6 +59,8 @@ function App() {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [wakingUp, setWakingUp] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<Record<string, string>>({});
+  const [scopeOutput, setScopeOutput] = useState<string>('');
+  const [showScope, setShowScope] = useState<boolean>(false);
   
   const isLoginValid = email.includes('@') && password.length >= 6;
   const isRegisterValid = isLoginValid && password === confirmPassword;
@@ -259,13 +261,44 @@ function App() {
       const subs = subdomains[selectedDomain];
       
       for (const item of subs) {
-          const sub = item.subdomain;
+          const isLegacyString = typeof item === 'string';
+          const sub = isLegacyString ? (item as string) : item.subdomain;
           if (!subdomainDetails[sub] || (subdomainDetails[sub].ip === null && (!subdomainDetails[sub].ports || subdomainDetails[sub].ports!.length === 0))) {
               await handleAnalyzeSubdomain(sub);
               // Rate limit on frontend side as well to avoid overwhelming our own backend
               await new Promise(resolve => setTimeout(resolve, 300));
           }
       }
+  };
+
+  const handleGenerateScope = () => {
+      if (!selectedDomain || !subdomains[selectedDomain]) return;
+      
+      const excludedPrefixes = ['mail.', 'smtp.', 'pop.', 'pop3.', 'imap.', 'ns.', 'ns1.', 'ns2.', 'dns.', 'mx.'];
+      const validSubdomains: string[] = [];
+
+      const subs = subdomains[selectedDomain];
+      
+      subs.forEach(item => {
+          const isLegacyString = typeof item === 'string';
+          const sub = isLegacyString ? (item as string) : item.subdomain;
+          const detail = subdomainDetails[sub];
+
+          // 1. Dışlanan (Mail/DNS) kelimelerle başlıyorsa atla
+          const isExcluded = excludedPrefixes.some(prefix => sub.toLowerCase().startsWith(prefix));
+          if (isExcluded) return;
+
+          // 2. Sadece aktif portu/web servisi olanları ekle
+          if (detail && detail.ports && detail.ports.length > 0) {
+              const hasActiveWeb = detail.ports.some(p => p.status === 200 || p.status === 201 || String(p.status).startsWith('3') || String(p.status).startsWith('4') || String(p.status).startsWith('5'));
+              if (hasActiveWeb) {
+                  validSubdomains.push(sub);
+              }
+          }
+      });
+
+      setScopeOutput(validSubdomains.join(', '));
+      setShowScope(true);
   };
 
   if (step === 'login' || step === 'register') {
@@ -513,110 +546,135 @@ function App() {
                     <button className="btn btn-inline" onClick={() => fetchSubdomains(selectedDomain, true)}>Tekrar Dene</button>
                   </div>
                 ) : subdomains[selectedDomain] && subdomains[selectedDomain].length > 0 ? (
-                  <div className="subdomain-list">
-                    {subdomains[selectedDomain].map((item, idx) => {
-                      // Geriye dönük uyumluluk: Eski localStorage verisi string dizisi olabilir
-                      const isLegacyString = typeof item === 'string';
-                      const sub = isLegacyString ? (item as string) : item.subdomain;
-                      const source = isLegacyString ? 'crt.sh' : item.source;
-                      const itemIp = isLegacyString ? undefined : item.ip;
-                      
-                      const detail = subdomainDetails[sub];
+                  <>
+                    <div className="subdomain-list">
+                      {subdomains[selectedDomain].map((item, idx) => {
+                        // Geriye dönük uyumluluk: Eski localStorage verisi string dizisi olabilir
+                        const isLegacyString = typeof item === 'string';
+                        const sub = isLegacyString ? (item as string) : item.subdomain;
+                        const source = isLegacyString ? 'crt.sh' : item.source;
+                        const itemIp = isLegacyString ? undefined : item.ip;
+                        
+                        const detail = subdomainDetails[sub];
 
-                      let sourceBadgeClass = 'source-crt';
-                      let sourceLabel = 'crt.sh';
-                      if (source === 'HackerTarget') { sourceBadgeClass = 'source-ht'; sourceLabel = 'HackerTarget'; }
-                      else if (source && source.includes('+')) { sourceBadgeClass = 'source-both'; sourceLabel = 'crt.sh + HackerTarget'; }
+                        let sourceBadgeClass = 'source-crt';
+                        let sourceLabel = 'crt.sh';
+                        if (source === 'HackerTarget') { sourceBadgeClass = 'source-ht'; sourceLabel = 'HackerTarget'; }
+                        else if (source && source.includes('+')) { sourceBadgeClass = 'source-both'; sourceLabel = 'crt.sh + HackerTarget'; }
 
-                      return (
-                        <div key={idx} className="subdomain-item-detailed">
-                          <div className="sub-header-row">
-                              <div className="sub-main-info">
-                                <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="subdomain-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                                <a href={`https://${sub}`} target="_blank" rel="noopener noreferrer">{sub}</a>
-                              </div>
-                              <span className={`source-badge ${sourceBadgeClass}`}>{sourceLabel}</span>
-                          </div>
-                          
-                          <div className="sub-details">
-                            {(detail?.analyzing || detail?.techAnalyzing) ? (
-                                <span className="analyzing-text">Web servisleri kontrol ediliyor...</span>
-                            ) : detail ? (
-                                <div className="detail-rows">
-                                  <div className="detail-row">
-                                    <span className="ip-badge">{detail.ip || itemIp || 'DNS Çözülemedi'}</span>
-                                    {detail.isCloudflare && (
-                                      <span className="cf-badge" title="Cloudflare Koruması Aktif">
-                                        <svg xmlns="http://www.w3.org/0000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5a4.5 4.5 0 0 0-4-4.43V10a5 5 0 0 0-9.8-1.4 3.5 3.5 0 0 0-5.7 2.4A4.5 4.5 0 0 0 6.5 19h11Z"/></svg>
-                                        Cloudflare
-                                      </span>
+                        return (
+                          <div key={idx} className="subdomain-item-detailed">
+                            <div className="sub-header-row">
+                                <div className="sub-main-info">
+                                  <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="subdomain-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                                  <a href={`https://${sub}`} target="_blank" rel="noopener noreferrer">{sub}</a>
+                                </div>
+                                <span className={`source-badge ${sourceBadgeClass}`}>{sourceLabel}</span>
+                            </div>
+                            
+                            <div className="sub-details">
+                              {(detail?.analyzing || detail?.techAnalyzing) ? (
+                                  <span className="analyzing-text">Web servisleri kontrol ediliyor...</span>
+                              ) : detail ? (
+                                  <div className="detail-rows">
+                                    <div className="detail-row">
+                                      <span className="ip-badge">{detail.ip || itemIp || 'DNS Çözülemedi'}</span>
+                                      {detail.isCloudflare && (
+                                        <span className="cf-badge" title="Cloudflare Koruması Aktif">
+                                          <svg xmlns="http://www.w3.org/0000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5a4.5 4.5 0 0 0-4-4.43V10a5 5 0 0 0-9.8-1.4 3.5 3.5 0 0 0-5.7 2.4A4.5 4.5 0 0 0 6.5 19h11Z"/></svg>
+                                          Cloudflare
+                                        </span>
+                                      )}
+                                    </div>
+                                    
+                                    {detail.ports && detail.ports.length > 0 ? (
+                                      <div className="ports-container">
+                                          {detail.ports.map((p, pIdx) => {
+                                              let statusBadgeClass = 'status-badge-gray';
+                                              if (p.status === 200 || p.status === 201) statusBadgeClass = 'status-badge-green';
+                                              else if (String(p.status).startsWith('3')) statusBadgeClass = 'status-badge-blue';
+                                              else if (String(p.status).startsWith('4') || String(p.status).startsWith('5')) statusBadgeClass = 'status-badge-red';
+                                              else statusBadgeClass = 'status-badge-gray';
+
+                                              const scheme = p.protocol === 'https:' ? 'https' : 'http';
+                                              const portStr = (scheme === 'https' && p.port === 443) || (scheme === 'http' && p.port === 80) ? '' : `:${p.port}`;
+                                              const targetUrl = `${scheme}://${sub}${portStr}`;
+
+                                              return (
+                                                  <a 
+                                                      key={pIdx} 
+                                                      href={targetUrl} 
+                                                      target="_blank" 
+                                                      rel="noopener noreferrer" 
+                                                      className="port-badge-group clickable-port"
+                                                      title={`${targetUrl} adresine git`}
+                                                  >
+                                                      <span className="port-number">:{p.port}</span>
+                                                      <span className={`status-badge-detailed ${statusBadgeClass}`}>{p.status}</span>
+                                                  </a>
+                                              );
+                                          })}
+                                      </div>
+                                    ) : (
+                                        <span className="no-ports-text">Açık web servisi bulunamadı</span>
+                                    )}
+
+                                    {detail.technologies && detail.technologies.length > 0 && (
+                                      <div className="tech-container">
+                                          {detail.technologies.map((t, tIdx) => {
+                                              let techClass = 'tech-gray';
+                                              switch(t.category) {
+                                                  case 'CMS': techClass = 'tech-purple'; break;
+                                                  case 'Frontend': techClass = 'tech-blue'; break;
+                                                  case 'Backend': techClass = 'tech-orange'; break;
+                                                  case 'Sunucu': techClass = 'tech-gray'; break;
+                                                  case 'CDN': techClass = 'tech-green'; break;
+                                                  case 'Analitik': techClass = 'tech-yellow'; break;
+                                                  case 'Güvenlik': techClass = 'tech-red'; break;
+                                              }
+                                              return (
+                                                  <span key={tIdx} className={`tech-badge ${techClass}`} title={t.category}>
+                                                      {t.name}
+                                                  </span>
+                                              );
+                                          })}
+                                      </div>
                                     )}
                                   </div>
-                                  
-                                  {detail.ports && detail.ports.length > 0 ? (
-                                    <div className="ports-container">
-                                        {detail.ports.map((p, pIdx) => {
-                                            let statusBadgeClass = 'status-badge-gray';
-                                            if (p.status === 200 || p.status === 201) statusBadgeClass = 'status-badge-green';
-                                            else if (String(p.status).startsWith('3')) statusBadgeClass = 'status-badge-blue';
-                                            else if (String(p.status).startsWith('4') || String(p.status).startsWith('5')) statusBadgeClass = 'status-badge-red';
-                                            else statusBadgeClass = 'status-badge-gray';
-
-                                            const scheme = p.protocol === 'https:' ? 'https' : 'http';
-                                            const portStr = (scheme === 'https' && p.port === 443) || (scheme === 'http' && p.port === 80) ? '' : `:${p.port}`;
-                                            const targetUrl = `${scheme}://${sub}${portStr}`;
-
-                                            return (
-                                                <a 
-                                                    key={pIdx} 
-                                                    href={targetUrl} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer" 
-                                                    className="port-badge-group clickable-port"
-                                                    title={`${targetUrl} adresine git`}
-                                                >
-                                                    <span className="port-number">:{p.port}</span>
-                                                    <span className={`status-badge-detailed ${statusBadgeClass}`}>{p.status}</span>
-                                                </a>
-                                            );
-                                        })}
-                                    </div>
-                                  ) : (
-                                      <span className="no-ports-text">Açık web servisi bulunamadı</span>
-                                  )}
-
-                                  {detail.technologies && detail.technologies.length > 0 && (
-                                    <div className="tech-container">
-                                        {detail.technologies.map((t, tIdx) => {
-                                            let techClass = 'tech-gray';
-                                            switch(t.category) {
-                                                case 'CMS': techClass = 'tech-purple'; break;
-                                                case 'Frontend': techClass = 'tech-blue'; break;
-                                                case 'Backend': techClass = 'tech-orange'; break;
-                                                case 'Sunucu': techClass = 'tech-gray'; break;
-                                                case 'CDN': techClass = 'tech-green'; break;
-                                                case 'Analitik': techClass = 'tech-yellow'; break;
-                                                case 'Güvenlik': techClass = 'tech-red'; break;
-                                            }
-                                            return (
-                                                <span key={tIdx} className={`tech-badge ${techClass}`} title={t.category}>
-                                                    {t.name}
-                                                </span>
-                                            );
-                                        })}
-                                    </div>
-                                  )}
-                                </div>
-                            ) : (
-                                <button className="btn-text btn-small" onClick={() => handleAnalyzeSubdomain(sub)}>
-                                  Web Servisi Kontrolü
-                                </button>
-                            )}
+                              ) : (
+                                  <button className="btn-text btn-small" onClick={() => handleAnalyzeSubdomain(sub)}>
+                                    Web Servisi Kontrolü
+                                  </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="scope-section">
+                        <button className="btn btn-secondary" onClick={handleGenerateScope} style={{ marginTop: '2rem' }}>
+                            <svg xmlns="http://www.w3.org/0000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                            Kapsam Oluştur (Aktif Web Sunucuları)
+                        </button>
+                        
+                        {showScope && (
+                            <div className="scope-output-box fade-in">
+                                <div className="scope-header">
+                                    <h4>Geçerli OSINT Kapsamı</h4>
+                                    <button className="btn-text btn-small" onClick={() => { navigator.clipboard.writeText(scopeOutput); alert('Kopyalandı!'); }}>Kopyala</button>
+                                </div>
+                                <p className="scope-desc">Sadece port taraması yapılmış ve aktif web servisi tespit edilmiş olan (Mail ve DNS sunucuları hariç) adresler.</p>
+                                <textarea 
+                                    className="form-input scope-textarea" 
+                                    readOnly 
+                                    value={scopeOutput}
+                                    placeholder="Henüz aktif web servisi tespit edilen bir adres yok. Lütfen listedeki adresleri analiz edin."
+                                />
+                            </div>
+                        )}
+                    </div>
+                  </>
                 ) : (
                   <div className="empty-state">
                     <p>Bu alan adı için herhangi bir kayıt bulunamadı veya henüz tarama yapılmadı.</p>

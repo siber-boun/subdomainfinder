@@ -699,6 +699,48 @@ body {
 .tech-yellow { background-color: #fef9c3; color: #854d0e; border-color: #fef08a; }
 .tech-red { background-color: #fee2e2; color: #991b1b; border-color: #fecaca; }
 
+.scope-section {
+  background-color: var(--card-bg);
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
+}
+
+.scope-output-box {
+  margin-top: 1.5rem;
+  background-color: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+}
+
+.scope-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.scope-header h4 {
+  color: var(--text-main);
+  margin: 0;
+}
+
+.scope-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.scope-textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  background-color: white;
+}
+
 .sub-main-info a {
   color: var(--text-main);
   text-decoration: none;
