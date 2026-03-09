@@ -778,7 +778,8 @@ function App() {
                         {/* ADVANCED SUMMARY TABLE */}
                         {subdomains[selectedDomain] && subdomains[selectedDomain].some(item => {
                             const sub = typeof item === 'string' ? (item as string) : item.subdomain;
-                            return subdomainDetails[sub] && (subdomainDetails[sub].ssl || subdomainDetails[sub].security);
+                            const detail = subdomainDetails[sub];
+                            return detail && (detail.ssl || detail.security || detail.advancedAnalyzing);
                         }) && (
                             <div className="advanced-summary-box fade-in">
                                 <h4>Gelişmiş Analiz Özeti</h4>
