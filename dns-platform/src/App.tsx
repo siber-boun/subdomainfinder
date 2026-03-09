@@ -27,6 +27,18 @@ interface SubdomainDetail {
   analyzing?: boolean;
   technologies?: TechInfo[];
   techAnalyzing?: boolean;
+  ssl?: any;
+  security?: any;
+  waf?: any;
+  advancedAnalyzing?: boolean;
+}
+
+interface EmailSecurityInfo {
+  spf: { hasRecord: boolean, hasMinusAll: boolean };
+  dmarc: { hasRecord: boolean, policy: string };
+  dkim: { hasRecord: boolean };
+  score: number;
+  grade: string;
 }
 
 // User data structure for localStorage
@@ -35,6 +47,7 @@ interface UserData {
   domains: string[];
   subdomainsCache: Record<string, SubdomainData[]>;
   subdomainDetailsCache: Record<string, SubdomainDetail>;
+  emailSecCache: Record<string, EmailSecurityInfo>;
 }
 
 // API Base URL - Local'de /api (Vite proxy üzerinden), Canlıda Render URL'si
@@ -56,6 +69,7 @@ function App() {
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [subdomains, setSubdomains] = useState<Record<string, SubdomainData[]>>({});
   const [subdomainDetails, setSubdomainDetails] = useState<Record<string, SubdomainDetail>>({});
+  const [emailSecurity, setEmailSecurity] = useState<Record<string, EmailSecurityInfo>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [wakingUp, setWakingUp] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<Record<string, string>>({});
@@ -79,6 +93,7 @@ function App() {
           setDomains(users[loggedInUser].domains || []);
           setSubdomains(users[loggedInUser].subdomainsCache || {});
           setSubdomainDetails(users[loggedInUser].subdomainDetailsCache || {});
+          setEmailSecurity(users[loggedInUser].emailSecCache || {});
         }
       }
     } else {
@@ -86,6 +101,7 @@ function App() {
       setSelectedDomain(null);
       setSubdomains({});
       setSubdomainDetails({});
+      setEmailSecurity({});
     }
   }, [loggedInUser]);
 
@@ -99,10 +115,11 @@ function App() {
         users[loggedInUser].domains = domains;
         users[loggedInUser].subdomainsCache = subdomains;
         users[loggedInUser].subdomainDetailsCache = subdomainDetails;
+        users[loggedInUser].emailSecCache = emailSecurity;
         localStorage.setItem('osint_users', JSON.stringify(users));
       }
     }
-  }, [domains, subdomains, subdomainDetails, loggedInUser]);
+  }, [domains, subdomains, subdomainDetails, emailSecurity, loggedInUser]);
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,7 +134,7 @@ function App() {
         return;
       }
       
-      users[email] = { password, domains: [], subdomainsCache: {}, subdomainDetailsCache: {} };
+      users[email] = { password, domains: [], subdomainsCache: {}, subdomainDetailsCache: {}, emailSecCache: {} };
       localStorage.setItem('osint_users', JSON.stringify(users));
       
       setLoggedInUser(email);
@@ -269,6 +286,45 @@ function App() {
           if (!subdomainDetails[sub] || (subdomainDetails[sub].ip === null && (!subdomainDetails[sub].ports || subdomainDetails[sub].ports!.length === 0))) {
               await handleAnalyzeSubdomain(sub);
               // Rate limit on frontend side as well to avoid overwhelming our own backend
+              await new Promise(resolve => setTimeout(resolve, 300));
+          }
+      }
+  };
+
+  const handleAdvancedAnalysis = async () => {
+      if (!selectedDomain) return;
+
+      // Email security fetch
+      try {
+          const res = await fetch(`${API_BASE_URL}/api/email-sec?domain=${selectedDomain}`);
+          if (res.ok) {
+              const data = await res.json();
+              setEmailSecurity(prev => ({ ...prev, [selectedDomain]: data }));
+          }
+      } catch(e) {}
+
+      // Advanced subdomains fetch
+      if (subdomains[selectedDomain]) {
+          for (const item of subdomains[selectedDomain]) {
+              const isLegacyString = typeof item === 'string';
+              const sub = isLegacyString ? (item as string) : item.subdomain;
+              
+              setSubdomainDetails(prev => ({ ...prev, [sub]: { ...prev[sub], advancedAnalyzing: true } }));
+              
+              try {
+                  const response = await fetch(`${API_BASE_URL}/api/advanced?subdomain=${sub}`);
+                  if (response.ok) {
+                      const data = await response.json();
+                      setSubdomainDetails(prev => ({ 
+                          ...prev, 
+                          [sub]: { ...prev[sub], ssl: data.ssl, security: data.advanced?.security, waf: data.advanced?.waf, advancedAnalyzing: false } 
+                      }));
+                  } else {
+                      setSubdomainDetails(prev => ({ ...prev, [sub]: { ...prev[sub], advancedAnalyzing: false } }));
+                  }
+              } catch (err) {
+                  setSubdomainDetails(prev => ({ ...prev, [sub]: { ...prev[sub], advancedAnalyzing: false } }));
+              }
               await new Promise(resolve => setTimeout(resolve, 300));
           }
       }
@@ -620,10 +676,42 @@ function App() {
                                       </div>
                                     ) : (
                                         <span className="no-ports-text">Açık web servisi bulunamadı</span>
-                                    )}
+                                        )}
 
-                                    {detail.technologies && detail.technologies.length > 0 && (
-                                      <div className="tech-container">
+                                        {detail.advancedAnalyzing && (
+                                        <span className="analyzing-text" style={{ marginTop: '0.5rem' }}>Gelişmiş analiz yapılıyor...</span>
+                                        )}
+
+                                        {!detail.advancedAnalyzing && detail.ssl && (
+                                        <div className="advanced-stats-container">
+                                          <div className="advanced-row">
+                                              <span className="adv-label">SSL:</span>
+                                              <span className={`status-badge-detailed ${detail.ssl.valid ? 'status-badge-green' : 'status-badge-red'}`}>{detail.ssl.valid ? 'Geçerli' : 'Geçersiz'}</span>
+                                              <span className="adv-value">({detail.ssl.daysLeft} gün, {detail.ssl.issuer})</span>
+                                              <span className={`grade-badge grade-${detail.ssl.grade}`}>{detail.ssl.grade}</span>
+                                          </div>
+                                          {detail.security && (
+                                              <div className="advanced-row">
+                                                  <span className="adv-label">HTTP Header Güvenliği:</span>
+                                                  <span className="adv-value">Skor: {detail.security.score}/100</span>
+                                                  <span className={`grade-badge grade-${detail.security.grade}`}>{detail.security.grade}</span>
+                                                  {detail.security.missing && detail.security.missing.length > 0 && (
+                                                      <span className="missing-headers" title={detail.security.missing.join(', ')}>
+                                                          Eksik: {detail.security.missing.slice(0, 2).join(', ')}{detail.security.missing.length > 2 ? '...' : ''}
+                                                      </span>
+                                                  )}
+                                              </div>
+                                          )}
+                                          {detail.waf && detail.waf.detected && (
+                                              <div className="advanced-row">
+                                                  <span className="adv-label">WAF:</span>
+                                                  <span className="cf-badge">{detail.waf.name} Korumalı</span>
+                                              </div>
+                                          )}
+                                        </div>
+                                        )}
+
+                                        {detail.technologies && detail.technologies.length > 0 && (                                      <div className="tech-container">
                                           {detail.technologies.map((t, tIdx) => {
                                               let techClass = 'tech-gray';
                                               switch(t.category) {
@@ -656,11 +744,37 @@ function App() {
                     </div>
                     
                     <div className="scope-section">
-                        <button className="btn btn-secondary" onClick={handleGenerateScope} style={{ marginTop: '2rem' }}>
-                            <svg xmlns="http://www.w3.org/0000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                            Kapsam Oluştur (Aktif Web Sunucuları)
-                        </button>
+                        <div className="action-buttons-row">
+                            <button className="btn btn-secondary" onClick={handleGenerateScope} style={{ width: 'auto' }}>
+                                <svg xmlns="http://www.w3.org/0000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                                Kapsam Oluştur (Aktif Web Sunucuları)
+                            </button>
+                            <button className="btn" onClick={handleAdvancedAnalysis} style={{ width: 'auto', backgroundColor: '#4f46e5' }}>
+                                <svg xmlns="http://www.w3.org/0000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+                                Gelişmiş Analiz Başlat
+                            </button>
+                        </div>
                         
+                        {emailSecurity[selectedDomain] && (
+                            <div className="email-security-box fade-in">
+                                <h4>E-Posta Güvenlik Skoru ({selectedDomain}) <span className={`grade-badge grade-${emailSecurity[selectedDomain].grade}`}>{emailSecurity[selectedDomain].grade}</span></h4>
+                                <div className="email-sec-grid">
+                                    <div className="email-sec-item">
+                                        <strong>SPF:</strong> {emailSecurity[selectedDomain].spf.hasRecord ? '✅ Var' : '❌ Yok'} 
+                                        {emailSecurity[selectedDomain].spf.hasRecord && (emailSecurity[selectedDomain].spf.hasMinusAll ? ' (Hard Fail)' : ' (Soft Fail/None)')}
+                                    </div>
+                                    <div className="email-sec-item">
+                                        <strong>DMARC:</strong> {emailSecurity[selectedDomain].dmarc.hasRecord ? '✅ Var' : '❌ Yok'} 
+                                        {emailSecurity[selectedDomain].dmarc.hasRecord && ` (Policy: ${emailSecurity[selectedDomain].dmarc.policy})`}
+                                    </div>
+                                    <div className="email-sec-item">
+                                        <strong>DKIM:</strong> {emailSecurity[selectedDomain].dkim.hasRecord ? '✅ Var (Standart)' : '❌ Standart Bulunamadı'}
+                                    </div>
+                                </div>
+                                <p className="email-sec-desc">E-posta sahteciliği (Phishing) risklerine karşı ana alan adı analizidir.</p>
+                            </div>
+                        )}
+
                         {showScope && (
                             <div className="scope-output-box fade-in">
                                 <div className="scope-header">

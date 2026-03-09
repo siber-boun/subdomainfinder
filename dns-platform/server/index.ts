@@ -4,6 +4,7 @@ import dns from 'node:dns';
 import net from 'node:net';
 import https from 'node:https';
 import http from 'node:http';
+import tls from 'node:tls';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -324,6 +325,147 @@ app.get('/api/tech', async (req, res) => {
 // Basic health check for Render
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
+});
+
+// Advanced Analysis Endpoints
+app.get('/api/advanced', async (req, res) => {
+    const subdomain = req.query.subdomain as string;
+    if (!subdomain || !isValidDomain(subdomain)) {
+        return res.status(400).json({ error: 'Geçerli bir subdomain gerekli' });
+    }
+
+    const sslInfo = await new Promise((resolve) => {
+        const socket = tls.connect(443, subdomain, { servername: subdomain, rejectUnauthorized: false }, () => {
+            const cert = socket.getPeerCertificate();
+            socket.destroy();
+            if (!cert || Object.keys(cert).length === 0) return resolve(null);
+            
+            const validTo = new Date(cert.valid_to);
+            const now = new Date();
+            const daysLeft = Math.floor((validTo.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            
+            let grade = 'F';
+            if (daysLeft >= 30) grade = 'A';
+            else if (daysLeft >= 7) grade = 'B';
+            else if (daysLeft >= 0) grade = 'C';
+            
+            const isSelfSigned = cert.issuer?.CN === cert.subject?.CN;
+            if (isSelfSigned) grade = 'F';
+            
+            resolve({
+                valid: daysLeft >= 0 && !isSelfSigned,
+                daysLeft,
+                issuer: cert.issuer?.O || cert.issuer?.CN || 'Bilinmiyor',
+                isSelfSigned,
+                grade
+            });
+        });
+        socket.on('error', () => resolve(null));
+        socket.setTimeout(3000, () => { socket.destroy(); resolve(null); });
+    });
+
+    const headerWafInfo = await new Promise((resolve) => {
+        const reqObj = https.request(`https://${subdomain}`, { method: 'HEAD', timeout: 3500, rejectUnauthorized: false }, (response) => {
+            const headers = response.headers;
+            
+            let score = 0;
+            const missing: string[] = [];
+            
+            if (headers['strict-transport-security']) score += 20; else missing.push('HSTS');
+            if (headers['content-security-policy']) score += 20; else missing.push('CSP');
+            if (headers['x-frame-options']) score += 20; else missing.push('X-Frame-Options');
+            if (headers['x-content-type-options']) score += 15; else missing.push('X-Content-Type-Options');
+            if (headers['referrer-policy']) score += 15; else missing.push('Referrer-Policy');
+            if (headers['permissions-policy']) score += 5; else missing.push('Permissions-Policy');
+            if (headers['x-xss-protection']) score += 5; else missing.push('X-XSS-Protection');
+            
+            let secGrade = 'F';
+            if (score >= 80) secGrade = 'A';
+            else if (score >= 60) secGrade = 'B';
+            else if (score >= 40) secGrade = 'C';
+            else if (score >= 20) secGrade = 'D';
+
+            let waf = null;
+            const serverHdr = (headers['server'] || '').toLowerCase();
+            if (serverHdr.includes('cloudflare') || headers['cf-ray']) waf = 'Cloudflare';
+            else if (headers['x-sucuri-id']) waf = 'Sucuri';
+            else if (headers['x-iinfo']) waf = 'Imperva';
+            else if (headers['x-fastly-request-id']) waf = 'Fastly';
+            else if (headers['x-azure-ref']) waf = 'Azure';
+            else if (headers['x-akamai-transformed']) waf = 'Akamai';
+
+            resolve({
+                security: { score, grade: secGrade, missing },
+                waf: waf ? { detected: true, name: waf } : { detected: false }
+            });
+        });
+        reqObj.on('error', () => resolve(null));
+        reqObj.on('timeout', () => { reqObj.destroy(); resolve(null); });
+        reqObj.end();
+    });
+
+    res.json({ ssl: sslInfo, advanced: headerWafInfo });
+});
+
+app.get('/api/email-sec', async (req, res) => {
+    const domain = req.query.domain as string;
+    if (!domain || !isValidDomain(domain)) {
+        return res.status(400).json({ error: 'Geçerli bir domain gerekli' });
+    }
+
+    let spf = { hasRecord: false, hasMinusAll: false };
+    let dmarc = { hasRecord: false, policy: 'none' };
+    let dkim = { hasRecord: false };
+
+    try {
+        const txtRecords = await dns.promises.resolveTxt(domain);
+        for (const record of txtRecords) {
+            const txt = record.join('');
+            if (txt.includes('v=spf1')) {
+                spf.hasRecord = true;
+                if (txt.includes('-all')) spf.hasMinusAll = true;
+            }
+        }
+    } catch (e) {}
+
+    try {
+        const dmarcRecords = await dns.promises.resolveTxt(`_dmarc.${domain}`);
+        for (const record of dmarcRecords) {
+            const txt = record.join('');
+            if (txt.includes('v=DMARC1')) {
+                dmarc.hasRecord = true;
+                if (txt.includes('p=reject')) dmarc.policy = 'reject';
+                else if (txt.includes('p=quarantine')) dmarc.policy = 'quarantine';
+                else dmarc.policy = 'none';
+            }
+        }
+    } catch (e) {}
+
+    const selectors = ['default', 'google', 'mail', 'selector1'];
+    for (const sel of selectors) {
+        try {
+            const dkimRecords = await dns.promises.resolveTxt(`${sel}._domainkey.${domain}`);
+            if (dkimRecords && dkimRecords.length > 0) {
+                dkim.hasRecord = true;
+                break;
+            }
+        } catch (e) {}
+    }
+
+    let score = 0;
+    if (spf.hasRecord) score += 20;
+    if (spf.hasMinusAll) score += 20;
+    if (dmarc.hasRecord) score += 20;
+    if (dmarc.policy === 'reject' || dmarc.policy === 'quarantine') score += 20;
+    if (dkim.hasRecord) score += 20;
+
+    let grade = 'F';
+    if (score >= 80) grade = 'A';
+    else if (score >= 60) grade = 'B';
+    else if (score >= 40) grade = 'C';
+    else if (score >= 20) grade = 'D';
+
+    res.json({ spf, dmarc, dkim, score, grade });
 });
 
 app.listen(PORT, () => {

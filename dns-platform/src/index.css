@@ -699,10 +699,103 @@ body {
 .tech-yellow { background-color: #fef9c3; color: #854d0e; border-color: #fef08a; }
 .tech-red { background-color: #fee2e2; color: #991b1b; border-color: #fecaca; }
 
+.advanced-stats-container {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.adv-label {
+  font-weight: 600;
+  color: var(--text-main);
+  min-width: 140px;
+}
+
+.adv-value {
+  color: var(--text-muted);
+}
+
+.grade-badge {
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  font-weight: 800;
+  font-size: 0.75rem;
+}
+
+.grade-A { background-color: #d1fae5; color: #059669; }
+.grade-B { background-color: #dcfce7; color: #15803d; }
+.grade-C { background-color: #fef9c3; color: #a16207; }
+.grade-D { background-color: #ffedd5; color: #c2410c; }
+.grade-F { background-color: #fee2e2; color: #b91c1c; }
+
+.missing-headers {
+  color: #ef4444;
+  font-size: 0.75rem;
+  font-style: italic;
+  margin-left: 0.5rem;
+}
+
 .scope-section {
   background-color: var(--card-bg);
   border-top: 1px solid var(--border-color);
   padding-top: 1rem;
+}
+
+.action-buttons-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+
+.email-security-box {
+  margin-top: 1.5rem;
+  background-color: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+}
+
+.email-security-box h4 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-main);
+}
+
+.email-sec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.email-sec-item {
+  background: white;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-color);
+  font-size: 0.85rem;
+  color: var(--text-main);
+}
+
+.email-sec-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0;
+  font-style: italic;
 }
 
 .scope-output-box {
