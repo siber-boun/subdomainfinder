@@ -515,13 +515,18 @@ function App() {
                 ) : subdomains[selectedDomain] && subdomains[selectedDomain].length > 0 ? (
                   <div className="subdomain-list">
                     {subdomains[selectedDomain].map((item, idx) => {
-                      const sub = item.subdomain;
+                      // Geriye dönük uyumluluk: Eski localStorage verisi string dizisi olabilir
+                      const isLegacyString = typeof item === 'string';
+                      const sub = isLegacyString ? (item as string) : item.subdomain;
+                      const source = isLegacyString ? 'crt.sh' : item.source;
+                      const itemIp = isLegacyString ? undefined : item.ip;
+                      
                       const detail = subdomainDetails[sub];
 
                       let sourceBadgeClass = 'source-crt';
                       let sourceLabel = 'crt.sh';
-                      if (item.source === 'HackerTarget') { sourceBadgeClass = 'source-ht'; sourceLabel = 'HackerTarget'; }
-                      else if (item.source.includes('+')) { sourceBadgeClass = 'source-both'; sourceLabel = 'crt.sh + HackerTarget'; }
+                      if (source === 'HackerTarget') { sourceBadgeClass = 'source-ht'; sourceLabel = 'HackerTarget'; }
+                      else if (source && source.includes('+')) { sourceBadgeClass = 'source-both'; sourceLabel = 'crt.sh + HackerTarget'; }
 
                       return (
                         <div key={idx} className="subdomain-item-detailed">
@@ -539,7 +544,7 @@ function App() {
                             ) : detail ? (
                                 <div className="detail-rows">
                                   <div className="detail-row">
-                                    <span className="ip-badge">{detail.ip || item.ip || 'DNS Çözülemedi'}</span>
+                                    <span className="ip-badge">{detail.ip || itemIp || 'DNS Çözülemedi'}</span>
                                     {detail.isCloudflare && (
                                       <span className="cf-badge" title="Cloudflare Koruması Aktif">
                                         <svg xmlns="http://www.w3.org/0000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5a4.5 4.5 0 0 0-4-4.43V10a5 5 0 0 0-9.8-1.4 3.5 3.5 0 0 0-5.7 2.4A4.5 4.5 0 0 0 6.5 19h11Z"/></svg>
