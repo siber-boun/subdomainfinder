@@ -7,11 +7,25 @@ interface SubdomainData {
   name_value: string;
 }
 
+interface PortInfo {
+  port: number;
+  status: number | string;
+  protocol: string;
+}
+
+interface SubdomainDetail {
+  ip: string | null;
+  ports?: PortInfo[];
+  isCloudflare?: boolean;
+  analyzing?: boolean;
+}
+
 // User data structure for localStorage
 interface UserData {
   password: string;
   domains: string[];
   subdomainsCache: Record<string, string[]>;
+  subdomainDetailsCache: Record<string, SubdomainDetail>;
 }
 
 function App() {
@@ -29,6 +43,7 @@ function App() {
   const [domains, setDomains] = useState<string[]>([]);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [subdomains, setSubdomains] = useState<Record<string, string[]>>({});
+  const [subdomainDetails, setSubdomainDetails] = useState<Record<string, SubdomainDetail>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<Record<string, string>>({});
   
@@ -45,16 +60,18 @@ function App() {
         if (users[loggedInUser]) {
           setDomains(users[loggedInUser].domains || []);
           setSubdomains(users[loggedInUser].subdomainsCache || {});
+          setSubdomainDetails(users[loggedInUser].subdomainDetailsCache || {});
         }
       }
     } else {
       setDomains([]);
       setSelectedDomain(null);
       setSubdomains({});
+      setSubdomainDetails({});
     }
   }, [loggedInUser]);
 
-  // Save domain list and subdomain cache when they change
+  // Save domain list and caches when they change
   useEffect(() => {
     if (loggedInUser) {
       const usersRaw = localStorage.getItem('osint_users');
@@ -63,10 +80,11 @@ function App() {
       if (users[loggedInUser]) {
         users[loggedInUser].domains = domains;
         users[loggedInUser].subdomainsCache = subdomains;
+        users[loggedInUser].subdomainDetailsCache = subdomainDetails;
         localStorage.setItem('osint_users', JSON.stringify(users));
       }
     }
-  }, [domains, subdomains, loggedInUser]);
+  }, [domains, subdomains, subdomainDetails, loggedInUser]);
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +99,7 @@ function App() {
         return;
       }
       
-      users[email] = { password, domains: [], subdomainsCache: {} };
+      users[email] = { password, domains: [], subdomainsCache: {}, subdomainDetailsCache: {} };
       localStorage.setItem('osint_users', JSON.stringify(users));
       
       setLoggedInUser(email);
@@ -126,11 +144,9 @@ function App() {
   const handleDeleteDomain = (domainToDelete: string, e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // Remove from domains list
     const newDomains = domains.filter(d => d !== domainToDelete);
     setDomains(newDomains);
     
-    // Remove from subdomains cache
     const newSubdomains = { ...subdomains };
     delete newSubdomains[domainToDelete];
     setSubdomains(newSubdomains);
@@ -139,7 +155,6 @@ function App() {
       setSelectedDomain(null);
     }
     
-    // Also update localStorage immediately for deletion
     if (loggedInUser) {
         const usersRaw = localStorage.getItem('osint_users');
         if (usersRaw) {
@@ -152,7 +167,6 @@ function App() {
   };
 
   const fetchSubdomains = async (domain: string, forceRefresh: boolean = false) => {
-    // If not forcing refresh and we already have cached data, just return
     if (!forceRefresh && subdomains[domain] && subdomains[domain].length > 0) {
         return;
     }
@@ -193,6 +207,34 @@ function App() {
   const handleDomainClick = (domain: string) => {
     setSelectedDomain(domain);
     fetchSubdomains(domain);
+  };
+
+  const handleAnalyzeSubdomain = async (sub: string) => {
+    setSubdomainDetails(prev => ({ ...prev, [sub]: { ...prev[sub], analyzing: true } }));
+    try {
+        const response = await fetch(`/api/analyze?domain=${sub}`);
+        const data = await response.json();
+        setSubdomainDetails(prev => ({ 
+            ...prev, 
+            [sub]: { ip: data.ip, ports: data.ports, isCloudflare: data.isCloudflare, analyzing: false } 
+        }));
+    } catch (err) {
+        setSubdomainDetails(prev => ({ 
+            ...prev, 
+            [sub]: { ip: null, ports: [], isCloudflare: false, analyzing: false } 
+        }));
+    }
+  };
+
+  const handleAnalyzeAll = async () => {
+      if (!selectedDomain || !subdomains[selectedDomain]) return;
+      const subs = subdomains[selectedDomain];
+      
+      for (const sub of subs) {
+          if (!subdomainDetails[sub] || (subdomainDetails[sub].ip === null && (!subdomainDetails[sub].ports || subdomainDetails[sub].ports!.length === 0))) {
+              await handleAnalyzeSubdomain(sub);
+          }
+      }
   };
 
   if (step === 'login' || step === 'register') {
@@ -386,9 +428,20 @@ function App() {
           ) : (
             <div className="card results-card fade-in">
               <div className="results-header">
-                <h3>{selectedDomain} - Subdomain Analizi (crt.sh)</h3>
+                <h3>{selectedDomain} - Subdomain & Web Servisi Analizi</h3>
                 <div className="results-actions" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                  {subdomains[selectedDomain] && <span className="results-stats-badge" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem', fontWeight: '600' }}>{subdomains[selectedDomain].length} kayıt bulundu</span>}
+                  {subdomains[selectedDomain] && <span className="results-stats-badge" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem', fontWeight: '600' }}>{subdomains[selectedDomain].length} kayıt</span>}
+                  
+                  {subdomains[selectedDomain] && subdomains[selectedDomain].length > 0 && (
+                    <button 
+                      className="btn btn-inline"
+                      onClick={handleAnalyzeAll}
+                      style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}
+                    >
+                      Hepsini Analiz Et
+                    </button>
+                  )}
+
                   <button 
                     className="btn-text" 
                     style={{ color: 'var(--primary-color)', fontSize: '0.875rem', padding: '0.25rem 0.5rem', width: 'auto', marginTop: 0 }}
@@ -414,14 +467,74 @@ function App() {
                     <button className="btn btn-inline" onClick={() => fetchSubdomains(selectedDomain, true)}>Tekrar Dene</button>
                   </div>
                 ) : subdomains[selectedDomain] && subdomains[selectedDomain].length > 0 ? (
-                  <ul className="subdomain-list">
-                    {subdomains[selectedDomain].map((sub, idx) => (
-                      <li key={idx} className="subdomain-item">
-                        <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="subdomain-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                        <a href={`https://${sub}`} target="_blank" rel="noopener noreferrer">{sub}</a>
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="subdomain-list">
+                    {subdomains[selectedDomain].map((sub, idx) => {
+                      const detail = subdomainDetails[sub];
+
+                      return (
+                        <div key={idx} className="subdomain-item-detailed">
+                          <div className="sub-main-info">
+                            <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="subdomain-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                            <a href={`https://${sub}`} target="_blank" rel="noopener noreferrer">{sub}</a>
+                          </div>
+                          
+                          <div className="sub-details">
+                            {detail?.analyzing ? (
+                                <span className="analyzing-text">Web servisleri kontrol ediliyor...</span>
+                            ) : detail ? (
+                                <div className="detail-rows">
+                                  <div className="detail-row">
+                                    <span className="ip-badge">{detail.ip || 'DNS Çözülemedi'}</span>
+                                    {detail.isCloudflare && (
+                                      <span className="cf-badge" title="Cloudflare Koruması Aktif">
+                                        <svg xmlns="http://www.w3.org/0000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5a4.5 4.5 0 0 0-4-4.43V10a5 5 0 0 0-9.8-1.4 3.5 3.5 0 0 0-5.7 2.4A4.5 4.5 0 0 0 6.5 19h11Z"/></svg>
+                                        Cloudflare
+                                      </span>
+                                    )}
+                                  </div>
+                                  
+                                  {detail.ports && detail.ports.length > 0 ? (
+                                    <div className="ports-container">
+                                        {detail.ports.map((p, pIdx) => {
+                                            let statusBadgeClass = 'status-badge-gray';
+                                            if (p.status === 200 || p.status === 201) statusBadgeClass = 'status-badge-green';
+                                            else if (String(p.status).startsWith('3')) statusBadgeClass = 'status-badge-blue';
+                                            else if (String(p.status).startsWith('4') || String(p.status).startsWith('5')) statusBadgeClass = 'status-badge-red';
+                                            else statusBadgeClass = 'status-badge-gray';
+
+                                            const targetUrl = p.protocol === 'https:' 
+                                                ? `https://${sub}:${p.port}`
+                                                : (p.protocol === 'http:' ? `http://${sub}:${p.port}` : `http://${sub}:${p.port}`);
+
+                                            return (
+                                                <a 
+                                                    key={pIdx} 
+                                                    href={targetUrl} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="port-badge-group clickable-port"
+                                                    title={`${targetUrl} adresine git`}
+                                                >
+                                                    <span className="port-number">:{p.port}</span>
+                                                    <span className={`status-badge-detailed ${statusBadgeClass}`}>{p.status}</span>
+                                                </a>
+                                            );
+                                        })}
+                                    </div>
+                                  ) : (
+                                      <span className="no-ports-text">Açık web servisi bulunamadı</span>
+                                  )}
+                                </div>
+                            ) : (
+                                <button className="btn-text btn-small" onClick={() => handleAnalyzeSubdomain(sub)}>
+                                  Web Servisi Kontrolü
+                                </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <div className="empty-state">
                     <p>Bu alan adı için herhangi bir kayıt bulunamadı veya henüz tarama yapılmadı.</p>
