@@ -48,6 +48,7 @@ function App() {
   const [subdomains, setSubdomains] = useState<Record<string, string[]>>({});
   const [subdomainDetails, setSubdomainDetails] = useState<Record<string, SubdomainDetail>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [wakingUp, setWakingUp] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<Record<string, string>>({});
   
   const isLoginValid = email.includes('@') && password.length >= 6;
@@ -176,9 +177,16 @@ function App() {
     
     setLoading(prev => ({ ...prev, [domain]: true }));
     setError(prev => ({ ...prev, [domain]: '' }));
+    setWakingUp(prev => ({ ...prev, [domain]: false }));
+
+    // Render uyku modundan uyanıyorsa 3 saniye sonra kullanıcıyı bilgilendir
+    const wakeUpTimer = setTimeout(() => {
+        setWakingUp(prev => ({ ...prev, [domain]: true }));
+    }, 3000);
     
     try {
       const response = await fetch(`${API_BASE_URL}/api/crt?q=${domain}`);
+      clearTimeout(wakeUpTimer);
       if (!response.ok) {
         throw new Error('crt.sh API yanıt vermedi');
       }
@@ -201,9 +209,12 @@ function App() {
       setSubdomains(prev => ({ ...prev, [domain]: results }));
       
     } catch (err: any) {
+      clearTimeout(wakeUpTimer);
       setError(prev => ({ ...prev, [domain]: 'Subdomainler alınırken bir hata oluştu veya crt.sh geçici olarak ulaşılamıyor.' }));
     } finally {
+      clearTimeout(wakeUpTimer);
       setLoading(prev => ({ ...prev, [domain]: false }));
+      setWakingUp(prev => ({ ...prev, [domain]: false }));
     }
   };
 
@@ -460,8 +471,23 @@ function App() {
               <div className="results-content">
                 {loading[selectedDomain] ? (
                   <div className="loading-state">
-                    <div className="spinner"></div>
-                    <p>crt.sh üzerinden sertifika şeffaflık logları taranıyor. Bu işlem biraz zaman alabilir...</p>
+                    {wakingUp[selectedDomain] ? (
+                        <div className="wakeup-container">
+                            <div className="wakeup-icon">
+                                <svg xmlns="http://www.w3.org/0000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/></svg>
+                            </div>
+                            <h4>Sunucu Uyanıyor...</h4>
+                            <p>Uzun süredir kullanılmadığı için sunucu uyku modundan çıkıyor. Bu işlem <b>~45 saniye</b> sürebilir. Lütfen bekleyin.</p>
+                            <div className="progress-bar-container">
+                                <div className="progress-bar-fill"></div>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="spinner"></div>
+                            <p>crt.sh üzerinden sertifika şeffaflık logları taranıyor...</p>
+                        </>
+                    )}
                   </div>
                 ) : error[selectedDomain] ? (
                   <div className="error-state">

@@ -554,6 +554,53 @@ body {
   color: var(--text-muted);
 }
 
+.wakeup-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 400px;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.wakeup-icon {
+  animation: spin 3s linear infinite;
+  margin-bottom: 1rem;
+}
+
+.wakeup-container h4 {
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+
+.wakeup-container p {
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background-color: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: var(--primary-color);
+  width: 0%;
+  /* 45 second animation */
+  animation: fillProgress 45s ease-out forwards;
+}
+
+@keyframes fillProgress {
+  0% { width: 0%; }
+  50% { width: 60%; }
+  80% { width: 85%; }
+  100% { width: 98%; }
+}
+
 .error-state {
   color: var(--error-color);
 }
