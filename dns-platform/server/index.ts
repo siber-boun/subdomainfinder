@@ -66,7 +66,91 @@ const checkHttp = (protocol: string, host: string, port: number): Promise<{statu
     });
 };
 
-// 1. crt.sh Proxy Endpoint
+async function fetchCrtSh(domain: string) {
+    try {
+        const fetch = (await import('node-fetch')).default;
+        const response = await fetch(`https://crt.sh/?q=${domain}&output=json`);
+        if (!response.ok) return [];
+        const data = await response.json();
+        
+        const uniqueSubdomains = new Set<string>();
+        data.forEach((item: any) => {
+            const parts = item.name_value.split('\n');
+            parts.forEach((part: string) => {
+                const cleaned = part.trim().toLowerCase();
+                const finalDomain = cleaned.startsWith('*.') ? cleaned.substring(2) : cleaned;
+                if (finalDomain && finalDomain.endsWith(domain)) {
+                   uniqueSubdomains.add(finalDomain);
+                }
+            });
+        });
+        return Array.from(uniqueSubdomains).map(sub => ({ subdomain: sub, source: 'crt.sh' }));
+    } catch {
+        return [];
+    }
+}
+
+async function fetchHackerTarget(domain: string) {
+    try {
+        const fetch = (await import('node-fetch')).default;
+        const res = await fetch(`https://api.hackertarget.com/hostsearch/?q=${domain}`);
+        const text = await res.text();
+        
+        if (text.includes('error') || text.includes('API count exceeded')) {
+            return [];
+        }
+
+        return text
+            .split('\n')
+            .filter(line => line.includes(','))
+            .map(line => ({
+                subdomain: line.split(',')[0].trim().toLowerCase(),
+                ip: line.split(',')[1].trim()
+            }))
+            .filter(item => item.subdomain.endsWith(`.${domain}`));
+    } catch {
+        return [];
+    }
+}
+
+// 1. Yeni Birleştirilmiş Subdomain Scan Endpoint
+app.get('/api/scan', async (req, res) => {
+    const domain = req.query.domain as string;
+    if (!domain) {
+        return res.status(400).json({ error: 'Domain parametresi gerekli' });
+    }
+
+    try {
+        const [crtResult, htResult] = await Promise.allSettled([
+            fetchCrtSh(domain),
+            fetchHackerTarget(domain)
+        ]);
+
+        const crtSubs = crtResult.status === 'fulfilled' ? crtResult.value : [];
+        const htSubs = htResult.status === 'fulfilled' ? htResult.value : [];
+
+        const merged = new Map();
+        
+        crtSubs.forEach(s => merged.set(s.subdomain, { subdomain: s.subdomain, source: 'crt.sh' }));
+        htSubs.forEach(s => {
+            if (merged.has(s.subdomain)) {
+                const existing = merged.get(s.subdomain);
+                existing.source = 'crt.sh + HackerTarget';
+                if (!existing.ip && s.ip) existing.ip = s.ip;
+            } else {
+                merged.set(s.subdomain, { subdomain: s.subdomain, ip: s.ip, source: 'HackerTarget' });
+            }
+        });
+
+        const finalResults = Array.from(merged.values()).sort((a, b) => a.subdomain.localeCompare(b.subdomain));
+        res.json(finalResults);
+    } catch (error) {
+        console.error('Scan error:', error);
+        res.status(500).json({ error: 'Tarama sırasında hata oluştu.' });
+    }
+});
+
+// Eski API endpointi geriye dönük uyumluluk için bırakılabilir veya silinebilir
 app.get('/api/crt', async (req, res) => {
     const domain = req.query.q;
     if (!domain) {
@@ -109,6 +193,8 @@ app.get('/api/analyze', async (req, res) => {
 
     if (ip) {
         const portChecks = HTTP_HTTPS_PORTS.map(async (port) => {
+            // Rate limiting bypass / delay for simple implementation
+            await new Promise(r => setTimeout(r, Math.random() * 300));
             const isOpen = await checkPort(port, domain);
             if (isOpen) {
                 let status: number | string = 'Açık (Yanıt Yok)';
@@ -128,18 +214,14 @@ app.get('/api/analyze', async (req, res) => {
                             status = result.status;
                             isCloudflare = result.isCloudflare;
                             finalProtocol = result.protocolUsed;
-                        } catch (e2: any) {
-                             // Fallback failed
-                        }
+                        } catch (e2: any) { }
                     } else {
                         try {
                             const result = await checkHttp('https:', domain, port);
                             status = result.status;
                             isCloudflare = result.isCloudflare;
                             finalProtocol = result.protocolUsed;
-                        } catch (e2: any) {
-                             // Fallback failed
-                        }
+                        } catch (e2: any) { }
                     }
                 }
                 activePorts.push({ port, status, isCloudflare, protocol: finalProtocol });
@@ -154,6 +236,81 @@ app.get('/api/analyze', async (req, res) => {
     const isCloudflareGlobal = filteredPorts.some(p => p.isCloudflare);
 
     res.json({ ip, ports: filteredPorts, isCloudflare: isCloudflareGlobal });
+});
+
+const TECH_SIGNATURES = [
+  // Web Framework
+  { name: "WordPress",   category: "CMS",        headers: { "x-powered-by": /wordpress/i }, html: /wp-content|wp-json/i },
+  { name: "Drupal",      category: "CMS",        headers: { "x-generator": /drupal/i },     html: /Drupal\.settings/i },
+  { name: "Joomla",      category: "CMS",        headers: {},                                html: /joomla/i },
+  { name: "Shopify",     category: "E-Ticaret",  headers: { "x-shopify-stage": /.+/i },     html: /shopify/i },
+  { name: "Magento",     category: "E-Ticaret",  headers: {},                                html: /magento|Mage\.Cookies/i },
+  // Frontend
+  { name: "React",       category: "Frontend",   headers: {},                                html: /react\.development|ReactDOM|__reactFiber/i },
+  { name: "Next.js",     category: "Frontend",   headers: { "x-powered-by": /next\.js/i },  html: /__NEXT_DATA__/i },
+  { name: "Vue.js",      category: "Frontend",   headers: {},                                html: /vue\.min\.js|__vue__/i },
+  { name: "Angular",     category: "Frontend",   headers: {},                                html: /ng-version|angular\.min\.js/i },
+  { name: "jQuery",      category: "Frontend",   headers: {},                                html: /jquery\.min\.js|jquery-\d/i },
+  { name: "Bootstrap",   category: "Frontend",   headers: {},                                html: /bootstrap\.min\.css|bootstrap\.min\.js/i },
+  // Backend
+  { name: "PHP",         category: "Backend",    headers: { "x-powered-by": /php/i },       html: null },
+  { name: "Laravel",     category: "Backend",    headers: {},                                html: /laravel_session/i },
+  { name: "Django",      category: "Backend",    headers: {},                                html: /csrfmiddlewaretoken/i },
+  { name: "ASP.NET",     category: "Backend",    headers: { "x-powered-by": /asp\.net/i },  html: /__VIEWSTATE/i },
+  { name: "Ruby Rails",  category: "Backend",    headers: { "x-powered-by": /phusion/i },   html: /authenticity_token/i },
+  // Sunucu
+  { name: "Nginx",       category: "Sunucu",     headers: { "server": /nginx/i },            html: null },
+  { name: "Apache",      category: "Sunucu",     headers: { "server": /apache/i },           html: null },
+  { name: "IIS",         category: "Sunucu",     headers: { "server": /iis/i },              html: null },
+  { name: "LiteSpeed",   category: "Sunucu",     headers: { "server": /litespeed/i },        html: null },
+  // CDN / Cloud
+  { name: "Cloudflare",  category: "CDN",        headers: { "server": /cloudflare/i },       html: null },
+  { name: "AWS CloudFront", category: "CDN",     headers: { "via": /cloudfront/i },          html: null },
+  { name: "Fastly",      category: "CDN",        headers: { "x-served-by": /cache/i },       html: null },
+  // Analitik
+  { name: "Google Analytics", category: "Analitik", headers: {},                             html: /gtag\(|ga\.js|analytics\.js/i },
+  { name: "Hotjar",      category: "Analitik",   headers: {},                                html: /hotjar/i },
+  // Güvenlik
+  { name: "reCAPTCHA",   category: "Güvenlik",   headers: {},                                html: /recaptcha/i },
+];
+
+app.get('/api/tech', async (req, res) => {
+    const subdomain = req.query.subdomain as string;
+    if (!subdomain) return res.status(400).json({ error: 'Subdomain gerekli' });
+
+    try {
+        const fetch = (await import('node-fetch')).default;
+        // 5 saniye timeout ile fetch
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`https://${subdomain}`, { 
+            signal: controller.signal as any,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        clearTimeout(timeoutId);
+        
+        const html = await response.text();
+        const headersObj: Record<string, string> = {};
+        response.headers.forEach((val, key) => {
+            headersObj[key.toLowerCase()] = val;
+        });
+
+        const detected = TECH_SIGNATURES.filter(tech => {
+            const headerMatch = Object.entries(tech.headers).some(
+                ([key, pattern]) => pattern.test(headersObj[key.toLowerCase()] || '')
+            );
+            const htmlMatch = tech.html ? tech.html.test(html) : false;
+            return headerMatch || htmlMatch;
+        });
+
+        res.json(detected.map(t => ({ name: t.name, category: t.category })));
+    } catch (err) {
+        // Hataları sessizce geç
+        res.json([]);
+    }
 });
 
 // Basic health check for Render

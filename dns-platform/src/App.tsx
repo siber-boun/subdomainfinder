@@ -185,32 +185,18 @@ function App() {
     }, 3000);
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/crt?q=${domain}`);
+      const response = await fetch(`${API_BASE_URL}/api/scan?domain=${domain}`);
       clearTimeout(wakeUpTimer);
       if (!response.ok) {
-        throw new Error('crt.sh API yanıt vermedi');
+        throw new Error('API yanıt vermedi');
       }
       
       const data: SubdomainData[] = await response.json();
-      
-      const uniqueSubdomains = new Set<string>();
-      data.forEach(item => {
-        const parts = item.name_value.split('\n');
-        parts.forEach(part => {
-          const cleaned = part.trim().toLowerCase();
-          const finalDomain = cleaned.startsWith('*.') ? cleaned.substring(2) : cleaned;
-          if (finalDomain && finalDomain.endsWith(domain)) {
-             uniqueSubdomains.add(finalDomain);
-          }
-        });
-      });
-      
-      const results = Array.from(uniqueSubdomains).sort();
-      setSubdomains(prev => ({ ...prev, [domain]: results }));
+      setSubdomains(prev => ({ ...prev, [domain]: data }));
       
     } catch (err: any) {
       clearTimeout(wakeUpTimer);
-      setError(prev => ({ ...prev, [domain]: 'Subdomainler alınırken bir hata oluştu veya crt.sh geçici olarak ulaşılamıyor.' }));
+      setError(prev => ({ ...prev, [domain]: 'Subdomainler alınırken bir hata oluştu veya servise geçici olarak ulaşılamıyor.' }));
     } finally {
       clearTimeout(wakeUpTimer);
       setLoading(prev => ({ ...prev, [domain]: false }));
@@ -224,29 +210,51 @@ function App() {
   };
 
   const handleAnalyzeSubdomain = async (sub: string) => {
-    setSubdomainDetails(prev => ({ ...prev, [sub]: { ...prev[sub], analyzing: true } }));
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/analyze?domain=${sub}`);
-        const data = await response.json();
+    setSubdomainDetails(prev => ({ ...prev, [sub]: { ...prev[sub], analyzing: true, techAnalyzing: true } }));
+    
+    // Port and Web Service Analysis
+    fetch(`${API_BASE_URL}/api/analyze?domain=${sub}`)
+      .then(res => res.json())
+      .then(data => {
         setSubdomainDetails(prev => ({ 
             ...prev, 
-            [sub]: { ip: data.ip, ports: data.ports, isCloudflare: data.isCloudflare, analyzing: false } 
+            [sub]: { ...prev[sub], ip: data.ip, ports: data.ports, isCloudflare: data.isCloudflare, analyzing: false } 
         }));
-    } catch (err: any) {
+      })
+      .catch(() => {
         setSubdomainDetails(prev => ({ 
             ...prev, 
-            [sub]: { ip: null, ports: [], isCloudflare: false, analyzing: false } 
+            [sub]: { ...prev[sub], ip: null, ports: [], isCloudflare: false, analyzing: false } 
         }));
-    }
+      });
+
+    // Technology Fingerprinting Analysis
+    fetch(`${API_BASE_URL}/api/tech?subdomain=${sub}`)
+      .then(res => res.json())
+      .then(data => {
+         setSubdomainDetails(prev => ({ 
+            ...prev, 
+            [sub]: { ...prev[sub], technologies: data, techAnalyzing: false } 
+         }));
+      })
+      .catch(() => {
+         setSubdomainDetails(prev => ({ 
+            ...prev, 
+            [sub]: { ...prev[sub], technologies: [], techAnalyzing: false } 
+         }));
+      });
   };
 
   const handleAnalyzeAll = async () => {
       if (!selectedDomain || !subdomains[selectedDomain]) return;
       const subs = subdomains[selectedDomain];
       
-      for (const sub of subs) {
+      for (const item of subs) {
+          const sub = item.subdomain;
           if (!subdomainDetails[sub] || (subdomainDetails[sub].ip === null && (!subdomainDetails[sub].ports || subdomainDetails[sub].ports!.length === 0))) {
               await handleAnalyzeSubdomain(sub);
+              // Rate limit on frontend side as well to avoid overwhelming our own backend
+              await new Promise(resolve => setTimeout(resolve, 300));
           }
       }
   };
@@ -497,23 +505,32 @@ function App() {
                   </div>
                 ) : subdomains[selectedDomain] && subdomains[selectedDomain].length > 0 ? (
                   <div className="subdomain-list">
-                    {subdomains[selectedDomain].map((sub, idx) => {
+                    {subdomains[selectedDomain].map((item, idx) => {
+                      const sub = item.subdomain;
                       const detail = subdomainDetails[sub];
+
+                      let sourceBadgeClass = 'source-crt';
+                      let sourceLabel = 'crt.sh';
+                      if (item.source === 'HackerTarget') { sourceBadgeClass = 'source-ht'; sourceLabel = 'HackerTarget'; }
+                      else if (item.source.includes('+')) { sourceBadgeClass = 'source-both'; sourceLabel = 'crt.sh + HackerTarget'; }
 
                       return (
                         <div key={idx} className="subdomain-item-detailed">
-                          <div className="sub-main-info">
-                            <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="subdomain-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                            <a href={`https://${sub}`} target="_blank" rel="noopener noreferrer">{sub}</a>
+                          <div className="sub-header-row">
+                              <div className="sub-main-info">
+                                <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="subdomain-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                                <a href={`https://${sub}`} target="_blank" rel="noopener noreferrer">{sub}</a>
+                              </div>
+                              <span className={`source-badge ${sourceBadgeClass}`}>{sourceLabel}</span>
                           </div>
                           
                           <div className="sub-details">
-                            {detail?.analyzing ? (
+                            {(detail?.analyzing || detail?.techAnalyzing) ? (
                                 <span className="analyzing-text">Web servisleri kontrol ediliyor...</span>
                             ) : detail ? (
                                 <div className="detail-rows">
                                   <div className="detail-row">
-                                    <span className="ip-badge">{detail.ip || 'DNS Çözülemedi'}</span>
+                                    <span className="ip-badge">{detail.ip || item.ip || 'DNS Çözülemedi'}</span>
                                     {detail.isCloudflare && (
                                       <span className="cf-badge" title="Cloudflare Koruması Aktif">
                                         <svg xmlns="http://www.w3.org/0000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5a4.5 4.5 0 0 0-4-4.43V10a5 5 0 0 0-9.8-1.4 3.5 3.5 0 0 0-5.7 2.4A4.5 4.5 0 0 0 6.5 19h11Z"/></svg>
@@ -552,6 +569,28 @@ function App() {
                                     </div>
                                   ) : (
                                       <span className="no-ports-text">Açık web servisi bulunamadı</span>
+                                  )}
+
+                                  {detail.technologies && detail.technologies.length > 0 && (
+                                    <div className="tech-container">
+                                        {detail.technologies.map((t, tIdx) => {
+                                            let techClass = 'tech-gray';
+                                            switch(t.category) {
+                                                case 'CMS': techClass = 'tech-purple'; break;
+                                                case 'Frontend': techClass = 'tech-blue'; break;
+                                                case 'Backend': techClass = 'tech-orange'; break;
+                                                case 'Sunucu': techClass = 'tech-gray'; break;
+                                                case 'CDN': techClass = 'tech-green'; break;
+                                                case 'Analitik': techClass = 'tech-yellow'; break;
+                                                case 'Güvenlik': techClass = 'tech-red'; break;
+                                            }
+                                            return (
+                                                <span key={tIdx} className={`tech-badge ${techClass}`} title={t.category}>
+                                                    {t.name}
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
                                   )}
                                 </div>
                             ) : (
