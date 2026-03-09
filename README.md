@@ -1,73 +1,24 @@
-# React + TypeScript + Vite
+# Kurumsal OSINT & Subdomain Finder
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Bu proje, hedef bir şirketin alan adı üzerinden pasif subdomain taraması yapan ve bulunan subdomain'lerde çalışan web servislerini analiz eden bir Açık Kaynak İstihbarat (OSINT) platformudur.
 
-Currently, two official plugins are available:
+🚀 **Canlı Uygulama:** [https://siber-boun.github.io/subdomainfinder/](https://siber-boun.github.io/subdomainfinder/)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Özellikler
 
-## React Compiler
+1. **Subdomain Keşfi:** `crt.sh` sertifika şeffaflık loglarını kullanarak hedef domain için kaydedilmiş tüm subdomainleri bulur.
+2. **Web Servisi & Port Analizi:** Bulunan her subdomain için yaygın olarak kullanılan 24 farklı HTTP/HTTPS/Panel portunu (`80`, `443`, `8443`, `8080`, `3000`, vb.) tarar.
+3. **HTTP Durum Kodu Tespiti:** Açık portlara HEAD isteği atarak anlık durum kodunu (`200 OK`, `403 Forbidden`, `301 Redirect`) tespit eder.
+4. **Cloudflare Tespiti:** WAF/Cloudflare arkasında olan web servislerini otomatik olarak tespit eder ve arayüzde özel bir rozet ile belirtir.
+5. **Akıllı Yönlendirme:** Bulunan açık portlara tıklandığında, sunucunun kullandığı protokole (HTTP veya HTTPS) göre doğru URL'yi oluşturarak yeni sekmede açar.
+6. **Kullanıcı Bazlı Veri Saklama:** Tarayıcı hafızasında (`localStorage`) birden fazla kullanıcı profili oluşturulabilir. Yapılan tüm taramalar kullanıcıya özel olarak saklanır.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Mimari
 
-## Expanding the ESLint configuration
+*   **Frontend:** React, TypeScript, Vite
+*   **Backend / API:** Node.js, Express.js
+*   **Hosting:** 
+    *   Ön yüz **GitHub Pages** üzerinde barındırılmaktadır.
+    *   Arka yüz (Tarama motoru ve Proxy) **Render.com** üzerinde barındırılmaktadır.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+*Not: Render sunucuları 15 dakika boyunca kullanılmadığında uyku moduna geçer. Bu nedenle ilk tarama işlemi sırasında sunucunun uyanması ~40 saniye sürebilir.*
