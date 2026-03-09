@@ -1,0 +1,439 @@
+import { useState, useEffect } from 'react';
+import './index.css';
+
+type Step = 'login' | 'register' | 'dashboard';
+
+interface SubdomainData {
+  name_value: string;
+}
+
+// User data structure for localStorage
+interface UserData {
+  password: string;
+  domains: string[];
+  subdomainsCache: Record<string, string[]>;
+}
+
+function App() {
+  const [step, setStep] = useState<Step>('login');
+  
+  // Auth states
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [loggedInUser, setLoggedInUser] = useState<string | null>(null);
+  
+  // Dashboard states
+  const [domainInput, setDomainInput] = useState('');
+  const [domains, setDomains] = useState<string[]>([]);
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [subdomains, setSubdomains] = useState<Record<string, string[]>>({});
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<Record<string, string>>({});
+  
+  const isLoginValid = email.includes('@') && password.length >= 6;
+  const isRegisterValid = isLoginValid && password === confirmPassword;
+  const isDomainValid = domainInput.length > 2 && !domainInput.includes(' ');
+
+  // Load user data on login
+  useEffect(() => {
+    if (loggedInUser) {
+      const usersRaw = localStorage.getItem('osint_users');
+      if (usersRaw) {
+        const users: Record<string, UserData> = JSON.parse(usersRaw);
+        if (users[loggedInUser]) {
+          setDomains(users[loggedInUser].domains || []);
+          setSubdomains(users[loggedInUser].subdomainsCache || {});
+        }
+      }
+    } else {
+      setDomains([]);
+      setSelectedDomain(null);
+      setSubdomains({});
+    }
+  }, [loggedInUser]);
+
+  // Save domain list and subdomain cache when they change
+  useEffect(() => {
+    if (loggedInUser) {
+      const usersRaw = localStorage.getItem('osint_users');
+      const users: Record<string, UserData> = usersRaw ? JSON.parse(usersRaw) : {};
+      
+      if (users[loggedInUser]) {
+        users[loggedInUser].domains = domains;
+        users[loggedInUser].subdomainsCache = subdomains;
+        localStorage.setItem('osint_users', JSON.stringify(users));
+      }
+    }
+  }, [domains, subdomains, loggedInUser]);
+
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    
+    if (isRegisterValid) {
+      const usersRaw = localStorage.getItem('osint_users');
+      const users: Record<string, UserData> = usersRaw ? JSON.parse(usersRaw) : {};
+      
+      if (users[email]) {
+        setAuthError('Bu e-posta adresi ile zaten bir hesap var.');
+        return;
+      }
+      
+      users[email] = { password, domains: [], subdomainsCache: {} };
+      localStorage.setItem('osint_users', JSON.stringify(users));
+      
+      setLoggedInUser(email);
+      setStep('dashboard');
+    }
+  };
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    
+    if (isLoginValid) {
+      const usersRaw = localStorage.getItem('osint_users');
+      const users: Record<string, UserData> = usersRaw ? JSON.parse(usersRaw) : {};
+      
+      if (!users[email] || users[email].password !== password) {
+        setAuthError('Hatalı e-posta veya şifre.');
+        return;
+      }
+      
+      setLoggedInUser(email);
+      setStep('dashboard');
+    }
+  };
+
+  const handleLogout = () => {
+    setLoggedInUser(null);
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setStep('login');
+  };
+
+  const handleAddDomain = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isDomainValid && !domains.includes(domainInput)) {
+      setDomains([...domains, domainInput]);
+      setDomainInput('');
+    }
+  };
+
+  const handleDeleteDomain = (domainToDelete: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Remove from domains list
+    const newDomains = domains.filter(d => d !== domainToDelete);
+    setDomains(newDomains);
+    
+    // Remove from subdomains cache
+    const newSubdomains = { ...subdomains };
+    delete newSubdomains[domainToDelete];
+    setSubdomains(newSubdomains);
+    
+    if (selectedDomain === domainToDelete) {
+      setSelectedDomain(null);
+    }
+    
+    // Also update localStorage immediately for deletion
+    if (loggedInUser) {
+        const usersRaw = localStorage.getItem('osint_users');
+        if (usersRaw) {
+            const users = JSON.parse(usersRaw);
+            users[loggedInUser].domains = newDomains;
+            users[loggedInUser].subdomainsCache = newSubdomains;
+            localStorage.setItem('osint_users', JSON.stringify(users));
+        }
+    }
+  };
+
+  const fetchSubdomains = async (domain: string, forceRefresh: boolean = false) => {
+    // If not forcing refresh and we already have cached data, just return
+    if (!forceRefresh && subdomains[domain] && subdomains[domain].length > 0) {
+        return;
+    }
+    
+    setLoading(prev => ({ ...prev, [domain]: true }));
+    setError(prev => ({ ...prev, [domain]: '' }));
+    
+    try {
+      const response = await fetch(`/api/crt/?q=%.${domain}&output=json`);
+      if (!response.ok) {
+        throw new Error('crt.sh API yanıt vermedi');
+      }
+      
+      const data: SubdomainData[] = await response.json();
+      
+      const uniqueSubdomains = new Set<string>();
+      data.forEach(item => {
+        const parts = item.name_value.split('\n');
+        parts.forEach(part => {
+          const cleaned = part.trim().toLowerCase();
+          const finalDomain = cleaned.startsWith('*.') ? cleaned.substring(2) : cleaned;
+          if (finalDomain && finalDomain.endsWith(domain)) {
+             uniqueSubdomains.add(finalDomain);
+          }
+        });
+      });
+      
+      const results = Array.from(uniqueSubdomains).sort();
+      setSubdomains(prev => ({ ...prev, [domain]: results }));
+      
+    } catch (err) {
+      setError(prev => ({ ...prev, [domain]: 'Subdomainler alınırken bir hata oluştu veya crt.sh geçici olarak ulaşılamıyor.' }));
+    } finally {
+      setLoading(prev => ({ ...prev, [domain]: false }));
+    }
+  };
+
+  const handleDomainClick = (domain: string) => {
+    setSelectedDomain(domain);
+    fetchSubdomains(domain);
+  };
+
+  if (step === 'login' || step === 'register') {
+    return (
+      <div className="login-container">
+        <div className="card login-card fade-in">
+          <div className="icon-container">
+            <div className="icon">
+              <svg xmlns="http://www.w3.org/0000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            </div>
+          </div>
+          <div className="header">
+            <h1>Kurumsal OSINT</h1>
+            <p>{step === 'login' ? 'Sisteme erişmek için giriş yapın' : 'Yeni bir hesap oluşturun'}</p>
+          </div>
+          
+          {authError && (
+            <div className="auth-error">
+              {authError}
+            </div>
+          )}
+          
+          <form onSubmit={step === 'login' ? handleLogin : handleRegister}>
+            <div className="form-group">
+              <label htmlFor="email">E-posta Adresi</label>
+              <input 
+                type="email" 
+                id="email" 
+                className="form-input" 
+                placeholder="isim@sirket.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="password">Şifre</label>
+              <input 
+                type="password" 
+                id="password" 
+                className="form-input" 
+                placeholder="•••••••• (Min 6 karakter)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            {step === 'register' && (
+              <div className="form-group fade-in">
+                <label htmlFor="confirmPassword">Şifre Tekrar</label>
+                <input 
+                  type="password" 
+                  id="confirmPassword" 
+                  className="form-input" 
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+            
+            <button type="submit" className="btn" disabled={step === 'login' ? !isLoginValid : !isRegisterValid}>
+              {step === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}
+            </button>
+          </form>
+
+          <div className="auth-switch">
+            {step === 'login' ? (
+              <p>Hesabınız yok mu? <button className="text-link" onClick={() => { setStep('register'); setAuthError(''); }}>Kayıt Olun</button></p>
+            ) : (
+              <p>Zaten hesabınız var mı? <button className="text-link" onClick={() => { setStep('login'); setAuthError(''); }}>Giriş Yapın</button></p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Dashboard View
+  return (
+    <div className="dashboard-layout fade-in">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <div className="sidebar-logo">
+            <svg xmlns="http://www.w3.org/0000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span>OSINT Platform</span>
+          </div>
+        </div>
+        
+        <div className="sidebar-content">
+          <h3 className="section-title">İncelenecek Domainler</h3>
+          
+          {domains.length === 0 ? (
+            <div className="empty-state">
+              <p>Henüz domain eklenmedi.</p>
+            </div>
+          ) : (
+            <ul className="domain-list">
+              {domains.map((d, idx) => {
+                const isSelected = selectedDomain === d;
+                const status = subdomains[d] && subdomains[d].length > 0 ? 'Tamamlandı' : (loading[d] ? 'Taranıyor...' : 'Bekliyor');
+                const statusClass = subdomains[d] && subdomains[d].length > 0 ? 'success' : (loading[d] ? 'loading' : 'pending');
+                
+                return (
+                  <li 
+                    key={idx} 
+                    className={`domain-item clickable ${isSelected ? 'active' : ''}`}
+                    onClick={() => handleDomainClick(d)}
+                  >
+                    <div className="domain-info-group">
+                      <span className="domain-icon">🌐</span>
+                      <span className="domain-text">{d}</span>
+                    </div>
+                    <div className="domain-actions-group">
+                      <span className={`status-badge ${statusClass}`}>{status}</span>
+                      <button 
+                        className="delete-btn" 
+                        onClick={(e) => handleDeleteDomain(d, e)}
+                        title="Sil"
+                      >
+                        <svg xmlns="http://www.w3.org/0000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        
+        <div className="sidebar-footer">
+          <div className="user-info-small">
+            <span className="user-email-truncate" title={loggedInUser || ''}>{loggedInUser}</span>
+          </div>
+          <button className="btn-text" onClick={handleLogout}>
+            <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Çıkış Yap
+          </button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div className="welcome-text">
+            <h2>OSINT Sayfasına Hoş Geldiniz</h2>
+            <p>Açık Kaynak İstihbarat platformuna giriş yaptınız. Hedef ekleyin veya incelemek için soldan bir domain seçin.</p>
+          </div>
+          <div className="user-profile" title={loggedInUser || ''}>
+            <div className="avatar">{loggedInUser ? loggedInUser.charAt(0).toUpperCase() : 'U'}</div>
+          </div>
+        </header>
+
+        <div className="content-area">
+          <div className="card input-card">
+            <div className="header" style={{ textAlign: 'left' }}>
+              <h3>Yeni Hedef Domain Ekle</h3>
+              <p>Subdomain taraması ve analiz için şirketin ana alan adını girin.</p>
+            </div>
+            
+            <form onSubmit={handleAddDomain} className="domain-form">
+              <div className="form-group mb-0 flex-grow">
+                <div className="domain-prefix">
+                  <span className="prefix">https://</span>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="sirketadi.com"
+                    value={domainInput}
+                    onChange={(e) => setDomainInput(e.target.value)}
+                  />
+                </div>
+              </div>
+              <button type="submit" className="btn btn-inline" disabled={!isDomainValid}>
+                <svg xmlns="http://www.w3.org/0000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Listeye Ekle
+              </button>
+            </form>
+          </div>
+
+          {!selectedDomain ? (
+            <div className="info-card">
+              <div className="info-icon">ℹ️</div>
+              <div className="info-text">
+                <h4>Detaylı Analiz İçin Seçim Yapın</h4>
+                <p>Eklediğiniz domainlerin crt.sh veritabanı üzerinden pasif subdomain taramasını başlatmak veya sonuçlarını görüntülemek için sol menüden bir domaine tıklayın. <strong>Girilen veriler hesabınıza özel olarak tarayıcınızda kaydedilir.</strong></p>
+              </div>
+            </div>
+          ) : (
+            <div className="card results-card fade-in">
+              <div className="results-header">
+                <h3>{selectedDomain} - Subdomain Analizi (crt.sh)</h3>
+                <div className="results-actions" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  {subdomains[selectedDomain] && <span className="results-stats-badge" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem', fontWeight: '600' }}>{subdomains[selectedDomain].length} kayıt bulundu</span>}
+                  <button 
+                    className="btn-text" 
+                    style={{ color: 'var(--primary-color)', fontSize: '0.875rem', padding: '0.25rem 0.5rem', width: 'auto', marginTop: 0 }}
+                    onClick={() => fetchSubdomains(selectedDomain, true)}
+                    title="Yenile"
+                  >
+                    <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Yenile
+                  </button>
+                </div>
+              </div>
+              
+              <div className="results-content">
+                {loading[selectedDomain] ? (
+                  <div className="loading-state">
+                    <div className="spinner"></div>
+                    <p>crt.sh üzerinden sertifika şeffaflık logları taranıyor. Bu işlem biraz zaman alabilir...</p>
+                  </div>
+                ) : error[selectedDomain] ? (
+                  <div className="error-state">
+                    <svg xmlns="http://www.w3.org/0000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <p>{error[selectedDomain]}</p>
+                    <button className="btn btn-inline" onClick={() => fetchSubdomains(selectedDomain, true)}>Tekrar Dene</button>
+                  </div>
+                ) : subdomains[selectedDomain] && subdomains[selectedDomain].length > 0 ? (
+                  <ul className="subdomain-list">
+                    {subdomains[selectedDomain].map((sub, idx) => (
+                      <li key={idx} className="subdomain-item">
+                        <svg xmlns="http://www.w3.org/0000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="subdomain-icon"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                        <a href={`https://${sub}`} target="_blank" rel="noopener noreferrer">{sub}</a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="empty-state">
+                    <p>Bu alan adı için herhangi bir kayıt bulunamadı veya henüz tarama yapılmadı.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default App;

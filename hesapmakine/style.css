@@ -1,0 +1,141 @@
+:root {
+    --bg-color: #0f172a;
+    --calc-bg: #1e293b;
+    --display-bg: #0f172a;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --operator: #f59e0b;
+    --control: #ef4444;
+    --btn-bg: #334155;
+    --btn-hover: #475569;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', -apple-system, sans-serif;
+}
+
+body {
+    background-color: var(--bg-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 1rem;
+}
+
+.calculator {
+    background-color: var(--calc-bg);
+    padding: 2.5rem;
+    border-radius: 2rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    width: 100%;
+    max-width: 500px; /* Daha geniş */
+}
+
+.display {
+    background-color: var(--display-bg);
+    padding: 2rem;
+    border-radius: 1.25rem;
+    margin-bottom: 2rem;
+    text-align: right;
+    word-wrap: break-word;
+    word-break: break-all;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+}
+
+.previous-operand {
+    color: var(--text-secondary);
+    font-size: 1.5rem; /* Daha büyük */
+}
+
+.current-operand {
+    color: var(--text-primary);
+    font-size: 3.5rem; /* Daha büyük */
+    font-weight: 800;
+}
+
+.buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem; /* Daha fazla boşluk */
+}
+
+button {
+    border: none;
+    border-radius: 1rem;
+    padding: 2rem 1.5rem; /* Çok daha büyük butonlar */
+    font-size: 1.75rem; /* Daha büyük yazı */
+    font-weight: 700;
+    background-color: var(--btn-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+button:hover {
+    background-color: var(--btn-hover);
+    transform: translateY(-4px); /* Daha belirgin hover */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+button:active {
+    transform: translateY(0);
+}
+
+.span-two {
+    grid-column: span 2;
+}
+
+.operator {
+    background-color: var(--operator);
+    color: white;
+}
+
+.operator:hover {
+    filter: brightness(1.1);
+}
+
+.control {
+    background-color: var(--control);
+    color: white;
+}
+
+.control:hover {
+    filter: brightness(1.1);
+}
+
+.equals {
+    background-color: var(--accent);
+    color: white;
+}
+
+.equals:hover {
+    background-color: var(--accent-hover);
+}
+
+/* Mobil uyumluluk */
+@media (max-width: 480px) {
+    .calculator {
+        padding: 1.5rem;
+    }
+    
+    button {
+        padding: 1.5rem 1rem;
+        font-size: 1.5rem;
+    }
+    
+    .current-operand {
+        font-size: 2.5rem;
+    }
+}
