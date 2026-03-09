@@ -101,7 +101,7 @@ app.get('/api/analyze', async (req, res) => {
     try {
         const records = await dns.promises.resolve4(domain);
         if (records && records.length > 0) ip = records[0];
-    } catch (e) {
+    } catch (e: any) {
         // DNS resolve failed
     }
 
@@ -121,21 +121,25 @@ app.get('/api/analyze', async (req, res) => {
                     status = result.status;
                     isCloudflare = result.isCloudflare;
                     finalProtocol = result.protocolUsed;
-                } catch (e) {
+                } catch (e: any) {
                     if (isHttps) {
                         try {
                             const result = await checkHttp('http:', domain, port);
                             status = result.status;
                             isCloudflare = result.isCloudflare;
                             finalProtocol = result.protocolUsed;
-                        } catch (e2) {}
+                        } catch (e2: any) {
+                             // Fallback failed
+                        }
                     } else {
                         try {
                             const result = await checkHttp('https:', domain, port);
                             status = result.status;
                             isCloudflare = result.isCloudflare;
                             finalProtocol = result.protocolUsed;
-                        } catch (e2) {}
+                        } catch (e2: any) {
+                             // Fallback failed
+                        }
                     }
                 }
                 activePorts.push({ port, status, isCloudflare, protocol: finalProtocol });

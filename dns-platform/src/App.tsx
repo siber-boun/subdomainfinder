@@ -200,7 +200,7 @@ function App() {
       const results = Array.from(uniqueSubdomains).sort();
       setSubdomains(prev => ({ ...prev, [domain]: results }));
       
-    } catch (err) {
+    } catch (err: any) {
       setError(prev => ({ ...prev, [domain]: 'Subdomainler alınırken bir hata oluştu veya crt.sh geçici olarak ulaşılamıyor.' }));
     } finally {
       setLoading(prev => ({ ...prev, [domain]: false }));
@@ -221,7 +221,7 @@ function App() {
             ...prev, 
             [sub]: { ip: data.ip, ports: data.ports, isCloudflare: data.isCloudflare, analyzing: false } 
         }));
-    } catch (err) {
+    } catch (err: any) {
         setSubdomainDetails(prev => ({ 
             ...prev, 
             [sub]: { ip: null, ports: [], isCloudflare: false, analyzing: false } 
