@@ -854,6 +854,26 @@ body {
   font-size: 0.8rem;
 }
 
+.col-missing {
+  max-width: 250px;
+}
+
+.missing-list-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.missing-tag {
+  font-size: 0.65rem;
+  background-color: #fee2e2;
+  color: #dc2626;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.2rem;
+  font-weight: 500;
+  border: 1px solid #fecaca;
+}
+
 .text-success { color: #059669; font-weight: 500; }
 .text-error { color: #dc2626; font-weight: 500; }
 .text-muted { color: #94a3b8; }

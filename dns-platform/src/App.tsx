@@ -791,6 +791,7 @@ function App() {
                                                 <th>SSL Skoru</th>
                                                 <th>Sertifika</th>
                                                 <th>HTTP Header Skoru</th>
+                                                <th>Eksik Headerlar</th>
                                                 <th>WAF Koruması</th>
                                             </tr>
                                         </thead>
@@ -818,6 +819,15 @@ function App() {
                                                         <td>
                                                             {detail.advancedAnalyzing ? <span className="analyzing-text-small">Taranıyor...</span> : 
                                                              detail.security ? <span className={`grade-badge grade-${detail.security.grade}`}>{detail.security.grade}</span> : <span className="text-muted">-</span>}
+                                                        </td>
+                                                        <td className="col-missing">
+                                                            {detail.security?.missing ? (
+                                                                <div className="missing-list-inline">
+                                                                    {detail.security.missing.map((m: string, mIdx: number) => (
+                                                                        <span key={mIdx} className="missing-tag">{m}</span>
+                                                                    ))}
+                                                                </div>
+                                                            ) : <span className="text-muted">-</span>}
                                                         </td>
                                                         <td>
                                                             {detail.advancedAnalyzing ? <span className="analyzing-text-small">Taranıyor...</span> : 
