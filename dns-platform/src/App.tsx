@@ -64,7 +64,10 @@ function App() {
   
   const isLoginValid = email.includes('@') && password.length >= 6;
   const isRegisterValid = isLoginValid && password === confirmPassword;
-  const isDomainValid = domainInput.length > 2 && !domainInput.includes(' ');
+  
+  // Sıkı domain doğrulaması (Sadece harf, rakam, tire ve nokta)
+  const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+  const isDomainValid = domainRegex.test(domainInput);
 
   // Load user data on login
   useEffect(() => {

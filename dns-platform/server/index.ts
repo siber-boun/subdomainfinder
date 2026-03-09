@@ -113,11 +113,17 @@ async function fetchHackerTarget(domain: string) {
     }
 }
 
+// Helper function to validate domain format strictly
+const isValidDomain = (domain: string) => {
+    const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    return domainRegex.test(domain);
+};
+
 // 1. Yeni Birleştirilmiş Subdomain Scan Endpoint
 app.get('/api/scan', async (req, res) => {
     const domain = req.query.domain as string;
-    if (!domain) {
-        return res.status(400).json({ error: 'Domain parametresi gerekli' });
+    if (!domain || !isValidDomain(domain)) {
+        return res.status(400).json({ error: 'Geçerli bir domain parametresi gerekli' });
     }
 
     try {
@@ -152,9 +158,9 @@ app.get('/api/scan', async (req, res) => {
 
 // Eski API endpointi geriye dönük uyumluluk için bırakılabilir veya silinebilir
 app.get('/api/crt', async (req, res) => {
-    const domain = req.query.q;
-    if (!domain) {
-        return res.status(400).json({ error: 'Domain parametresi (q) gerekli' });
+    const domain = req.query.q as string;
+    if (!domain || !isValidDomain(domain)) {
+        return res.status(400).json({ error: 'Geçerli bir domain parametresi (q) gerekli' });
     }
 
     try {
@@ -177,8 +183,8 @@ app.get('/api/crt', async (req, res) => {
 app.get('/api/analyze', async (req, res) => {
     const domain = req.query.domain as string;
     
-    if (!domain) {
-        return res.status(400).json({ error: 'Domain parametresi gerekli' });
+    if (!domain || !isValidDomain(domain)) {
+        return res.status(400).json({ error: 'Geçerli bir domain parametresi gerekli' });
     }
 
     let ip = null;
@@ -276,7 +282,9 @@ const TECH_SIGNATURES = [
 
 app.get('/api/tech', async (req, res) => {
     const subdomain = req.query.subdomain as string;
-    if (!subdomain) return res.status(400).json({ error: 'Subdomain gerekli' });
+    if (!subdomain || !isValidDomain(subdomain)) {
+        return res.status(400).json({ error: 'Geçerli bir subdomain gerekli' });
+    }
 
     try {
         const fetch = (await import('node-fetch')).default;
