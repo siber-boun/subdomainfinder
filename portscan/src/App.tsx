@@ -97,7 +97,7 @@ function App() {
     setScanResult(null);
 
     try {
-      const response = await fetch(`http://localhost:3001/api/scan?target=${target}`);
+      const response = await fetch(`/api/scan?target=${target}`);
       const data = await response.json();
       setScanResult(data);
     } catch (error) {
@@ -110,7 +110,7 @@ function App() {
   const scanSpecificIP = async (ip: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:3001/api/portscan?ip=${ip}`);
+      const response = await fetch(`/api/portscan?ip=${ip}`);
       const data = await response.json();
       setScanResult({ type: 'portscan', target: ip, result: data.result });
     } catch (error) {

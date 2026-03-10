@@ -1,14 +1,7 @@
-import express from 'express';
-import cors from 'cors';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import fetch from 'node-fetch';
-import net from 'node:net';
 import dns from 'node:dns';
-
-const app = express();
-const port = process.env.PORT || 3001;
-
-app.use(cors());
-app.use(express.json());
+import net from 'node:net';
 
 // Nmap Top 30 Common Ports
 const TOP_30_PORTS = [
@@ -16,7 +9,6 @@ const TOP_30_PORTS = [
   1723, 3306, 3389, 5900, 8080, 8443, 161, 5432, 1433, 1521, 2049, 631, 1194, 3000, 9000
 ];
 
-// Helper function to resolve IP
 async function resolveIP(domain: string): Promise<string | null> {
   try {
     const addresses = await dns.promises.resolve4(domain);
@@ -26,13 +18,12 @@ async function resolveIP(domain: string): Promise<string | null> {
   }
 }
 
-// Local port scanner function
 async function localPortScan(host: string): Promise<string> {
   const results: string[] = [];
   const scanPromises = TOP_30_PORTS.map((port) => {
     return new Promise<void>((resolve) => {
       const socket = new net.Socket();
-      socket.setTimeout(3000);
+      socket.setTimeout(2000);
       socket.on('connect', () => {
         results.push(`${host}:${port} [OPEN]`);
         socket.destroy();
@@ -44,11 +35,10 @@ async function localPortScan(host: string): Promise<string> {
     });
   });
   await Promise.all(scanPromises);
-  if (results.length === 0) return "No open ports found.";
-  return results.join('\n');
+  return results.length === 0 ? "No open ports found." : results.join('\n');
 }
 
-app.get('/api/scan', async (req, res) => {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { target } = req.query;
   if (!target || typeof target !== 'string') return res.status(400).json({ error: 'Target is required' });
 
@@ -56,11 +46,11 @@ app.get('/api/scan', async (req, res) => {
 
   if (isIP) {
     const result = await localPortScan(target);
-    res.json({ type: 'portscan', target, result });
+    return res.json({ type: 'portscan', target, result });
   } else {
     try {
       const response = await fetch(`https://crt.sh/?q=${target}&output=json`);
-      const data = await response.json();
+      const data: any = await response.json();
       const subSet = new Set<string>();
       data.forEach((entry: any) => {
         entry.name_value.split('\n').forEach((name: string) => {
@@ -72,29 +62,16 @@ app.get('/api/scan', async (req, res) => {
       });
 
       const subList = Array.from(subSet).sort();
-      // Resolve IPs for subdomains (Limited to first 50 for performance)
       const resultsWithIPs = await Promise.all(
-        subList.slice(0, 50).map(async (sub) => {
+        subList.slice(0, 30).map(async (sub) => {
           const ip = await resolveIP(sub);
           return { subdomain: sub, ip };
         })
       );
 
-      res.json({ type: 'subdomains', target, result: resultsWithIPs });
+      return res.json({ type: 'subdomains', target, result: resultsWithIPs });
     } catch (error) {
-      res.json({ type: 'subdomains', target, result: [] });
+      return res.json({ type: 'subdomains', target, result: [] });
     }
   }
-});
-
-// Dedicated port scan endpoint
-app.get('/api/portscan', async (req, res) => {
-  const { ip } = req.query;
-  if (!ip || typeof ip !== 'string') return res.status(400).json({ error: 'IP is required' });
-  const result = await localPortScan(ip);
-  res.json({ result });
-});
-
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+}
