@@ -333,7 +333,7 @@ function App() {
   const handleGenerateScope = () => {
       if (!selectedDomain || !subdomains[selectedDomain]) return;
       
-      const excludedPrefixes = ['mail.', 'smtp.', 'pop.', 'pop3.', 'imap.', 'ns.', 'ns1.', 'ns2.', 'dns.', 'mx.'];
+      const excludedPrefixes = ['mail.', 'webmail.', 'smtp.', 'pop.', 'pop3.', 'imap.', 'ns.', 'ns1.', 'ns2.', 'dns.', 'mx.'];
       const validSubdomains: string[] = [];
 
       const subs = subdomains[selectedDomain];
